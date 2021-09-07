@@ -1,4 +1,5 @@
 import sys
+
 sys.path.insert(0, './yolov5')
 
 from yolov5.utils.google_utils import attempt_download
@@ -33,7 +34,7 @@ def compute_color_for_id(label):
 def detect(opt):
     out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
         opt.output, opt.source, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, opt.save_vid, \
-            opt.save_txt, opt.img_size, opt.evaluate
+        opt.save_txt, opt.img_size, opt.evaluate
     webcam = source == '0' or source.startswith(
         'rtsp') or source.startswith('http') or source.endswith('.txt')
 
@@ -92,6 +93,9 @@ def detect(opt):
     txt_file_name = source.split('/')[-1].split('.')[0]
     txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
 
+    activity_volume = {}
+    position = {}
+    exist_id = {}
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -134,11 +138,11 @@ def detect(opt):
 
                 # pass detections to deepsort
                 outputs = deepsort.update(xywhs.cpu(), confs.cpu(), clss, im0)
-                
+
                 # draw boxes for visualization
                 if len(outputs) > 0:
-                    for j, (output, conf) in enumerate(zip(outputs, confs)): 
-                        
+                    for j, (output, conf) in enumerate(zip(outputs, confs)):
+
                         bboxes = output[0:4]
                         id = output[4]
                         cls = output[5]
@@ -148,6 +152,24 @@ def detect(opt):
                         color = compute_color_for_id(id)
                         plot_one_box(bboxes, im0, label=label, color=color, line_thickness=2)
 
+                        """add code save center point"""
+                        center_x = output[0] + (output[2] - output[0]) / 2
+                        center_y = output[1] + (output[3] - output[1]) / 2
+                        cv2.line(im0, (int(center_x), int(center_y)), (int(center_x), int(center_y)), color, 5)
+                        object_name = names[c] + "_" + str(id)  # class_name 수정
+                        # frame_x, frame_y = frame_size # 수정
+                        if object_name in exist_id:
+                            x, y, z = position[object_name]
+                            if center_x > x + 50 or center_x < x - 50 or center_y > y + 50 or center_y < y - 50:
+                                activity_volume[object_name] += (((center_x - x) / ((frame_idx - z) / 30)) ** 2 + (
+                                            (center_y - y) / ((frame_num - z) / 30)) ** 2) ** 0.5
+                                position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
+                        else:
+                            exist_id.append(object_name)
+                            position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
+                            activity_volume.setdefault(object_name, 0)
+                        """add code end"""
+
                         if save_txt:
                             # to MOT format
                             bbox_left = output[0]
@@ -156,8 +178,9 @@ def detect(opt):
                             bbox_h = output[3] - output[1]
                             # Write MOT compliant results to file
                             with open(txt_path, 'a') as f:
-                               f.write(('%g ' * 10 + '\n') % (frame_idx, id, bbox_left,
-                                                           bbox_top, bbox_w, bbox_h, -1, -1, -1, -1))  # label format
+                                f.write(('%g ' * 10 + '\n') % (frame_idx, id, bbox_left,
+                                                               bbox_top, bbox_w, bbox_h, -1, -1, -1,
+                                                               -1))  # label format
 
             else:
                 deepsort.increment_ages()
@@ -199,7 +222,8 @@ def detect(opt):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--yolo_weights', type=str, default='yolov5/weights/yolov5s.pt', help='model.pt path')
-    parser.add_argument('--deep_sort_weights', type=str, default='deep_sort_pytorch/deep_sort/deep/checkpoint/ckpt.t7', help='ckpt.t7 path')
+    parser.add_argument('--deep_sort_weights', type=str, default='deep_sort_pytorch/deep_sort/deep/checkpoint/ckpt.t7',
+                        help='ckpt.t7 path')
     # file/folder, 0 for webcam
     parser.add_argument('--source', type=str, default='0', help='source')
     parser.add_argument('--output', type=str, default='inference/output', help='output folder')  # output folder
