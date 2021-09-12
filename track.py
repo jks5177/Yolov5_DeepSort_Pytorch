@@ -95,7 +95,7 @@ def detect(opt):
 
     activity_volume = {}
     position = {}
-    exist_id = {}
+    exist_id = []
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -162,7 +162,7 @@ def detect(opt):
                             x, y, z = position[object_name]
                             if center_x > x + 50 or center_x < x - 50 or center_y > y + 50 or center_y < y - 50:
                                 activity_volume[object_name] += (((center_x - x) / ((frame_idx - z) / 30)) ** 2 + (
-                                            (center_y - y) / ((frame_num - z) / 30)) ** 2) ** 0.5
+                                            (center_y - y) / ((frame_idx - z) / 30)) ** 2) ** 0.5
                                 position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
                         else:
                             exist_id.append(object_name)
@@ -210,6 +210,10 @@ def detect(opt):
 
                     vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                 vid_writer.write(im0)
+
+    # add code (save json file)
+    with open('/content/activity_volume.json', 'w') as f :
+      json.dump(activity_volume, f)
 
     if save_txt or save_vid:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
