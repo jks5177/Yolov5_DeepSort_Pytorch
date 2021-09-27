@@ -96,7 +96,7 @@ def detect(opt):
 
     activity_volume = {}
     position = {}
-    exist_id = []
+    activity_dic = {}
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -159,14 +159,14 @@ def detect(opt):
                         cv2.line(im0, (int(center_x), int(center_y)), (int(center_x), int(center_y)), color, 5)
                         object_name = names[c] + "_" + str(id)  # class_name 수정
                         # frame_x, frame_y = frame_size # 수정
-                        if object_name in exist_id:
+                        if object_name in activity_volume.keys():
                             x, y, z = position[object_name]
                             if center_x > x + 50 or center_x < x - 50 or center_y > y + 50 or center_y < y - 50:
                                 activity_volume[object_name] += (((center_x - x) / ((frame_idx - z) / 30)) ** 2 + (
-                                            (center_y - y) / ((frame_idx - z) / 30)) ** 2) ** 0.5
+                                        (center_y - y) / ((frame_idx - z) / 30)) ** 2) ** 0.5
                                 position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
                         else:
-                            exist_id.append(object_name)
+                            # exist_id.append(object_name)
                             position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
                             activity_volume.setdefault(object_name, 0)
                         """add code end"""
@@ -182,6 +182,22 @@ def detect(opt):
                                 f.write(('%g ' * 10 + '\n') % (frame_idx, id, bbox_left,
                                                                bbox_top, bbox_w, bbox_h, -1, -1, -1,
                                                                -1))  # label format
+
+                    """add code"""
+                    if frame_idx % 180 == 0:
+                        for i in activity_volume.keys():
+                            if i in activity_dic.keys():
+                                activity_dic[i].append(activity_volume[i])
+                            else:
+                                try:
+                                    activity_dic[i] = [0 for i in range(len(list(activity_dic.values())[0]) - 1)]
+                                    activity_dic[i].append(activity_volume[i])
+                                except:
+                                    activity_dic[i] = [activity_volume[i]]
+
+                            activity_volume[object_name] = 0
+                        print(activity_dic)
+                    """add code end"""
 
             else:
                 deepsort.increment_ages()
@@ -213,8 +229,12 @@ def detect(opt):
                 vid_writer.write(im0)
 
     # add code (save json file)
-    with open('/content/activity_volume.json', 'w') as f :
-      json.dump(activity_volume, f)
+    with open('/content/activity_volume.json', 'w') as f:
+        json.dump(activity_volume, f)
+
+    # add code (save json file)
+    with open('/content/activity_dic.json', 'w') as f:
+        json.dump(activity_dic, f)
 
     if save_txt or save_vid:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
