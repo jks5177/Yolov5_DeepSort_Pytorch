@@ -97,6 +97,9 @@ def detect(opt):
     activity_volume = {}
     position = {}
     activity_dic = {}
+    activity_mean = {}
+    activity_max = {}
+    count_cow = []
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -132,7 +135,7 @@ def detect(opt):
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += '%g %ss, ' % (n, names[int(c)])  # add to string
-
+                count_cow.append(n)
                 xywhs = xyxy2xywh(det[:, 0:4])
                 confs = det[:, 4]
                 clss = det[:, 5]
@@ -164,11 +167,14 @@ def detect(opt):
                             if center_x > x + 50 or center_x < x - 50 or center_y > y + 50 or center_y < y - 50:
                                 activity_volume[object_name] += (((center_x - x) / ((frame_idx - z) / 30)) ** 2 + (
                                         (center_y - y) / ((frame_idx - z) / 30)) ** 2) ** 0.5
-                                position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
+                                # position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
+                                position[object_name] = (int(center_x), int(center_y), int(frame_idx))
                         else:
                             # exist_id.append(object_name)
-                            position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
-                            activity_volume.setdefault(object_name, 0)
+                            # position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
+                            # activity_volume.setdefault(object_name, 0)
+                            position[object_name] = (int(center_x), int(center_y), int(frame_idx))
+                            activity_volume[object_name] = 0
                         """add code end"""
 
                         if save_txt:
@@ -185,6 +191,7 @@ def detect(opt):
 
                     """add code"""
                     if frame_idx % 180 == 0:
+                        tmp = 0
                         for i in activity_volume.keys():
                             if i in activity_dic.keys():
                                 activity_dic[i].append(activity_volume[i])
@@ -195,8 +202,12 @@ def detect(opt):
                                 except:
                                     activity_dic[i] = [activity_volume[i]]
 
-                            activity_volume[object_name] = 0
-                        print(activity_dic)
+                            tmp += activity_volume[i]
+                            activity_volume[i] = 0
+                        activity_mean[(frame_idx / 30)] = tmp / (int(sum(count_cow)) / len(count_cow))
+                        activity_max[(frame_idx / 30)] = tmp / int(max(count_cow))
+                        print(activity_mean)
+                        print(activity_max)
                     """add code end"""
 
             else:
@@ -235,6 +246,14 @@ def detect(opt):
     # add code (save json file)
     with open('/content/activity_dic.json', 'w') as f:
         json.dump(activity_dic, f)
+
+    # add code (save json file)
+    with open('/content/activity_mean.json', 'w') as f:
+        json.dump(activity_mean, f)
+
+    # add code (save json file)
+    with open('/content/activity_max.json', 'w') as f:
+        json.dump(activity_max, f)
 
     if save_txt or save_vid:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
