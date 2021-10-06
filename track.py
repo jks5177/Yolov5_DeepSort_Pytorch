@@ -93,7 +93,6 @@ def detect(opt):
     # extract what is in between the last '/' and last '.'
     txt_file_name = source.split('/')[-1].split('.')[0]
     txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
-
     activity_volume = {}
     position = {}
     activity_dic = {}
@@ -101,143 +100,146 @@ def detect(opt):
     activity_max = {}
     count_cow = []
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
-        img = torch.from_numpy(img).to(device)
-        img = img.half() if half else img.float()  # uint8 to fp16/32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
-        if img.ndimension() == 3:
-            img = img.unsqueeze(0)
+        # print("B",frame_idx)
+        if frame_idx % 10 == 0:
+            # print("A",frame_idx)
+            img = torch.from_numpy(img).to(device)
+            img = img.half() if half else img.float()  # uint8 to fp16/32
+            img /= 255.0  # 0 - 255 to 0.0 - 1.0
+            if img.ndimension() == 3:
+                img = img.unsqueeze(0)
 
-        # Inference
-        t1 = time_synchronized()
-        pred = model(img, augment=opt.augment)[0]
+            # Inference
+            t1 = time_synchronized()
+            pred = model(img, augment=opt.augment)[0]
 
-        # Apply NMS
-        pred = non_max_suppression(
-            pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-        t2 = time_synchronized()
+            # Apply NMS
+            pred = non_max_suppression(
+                pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+            t2 = time_synchronized()
 
-        # Process detections
-        for i, det in enumerate(pred):  # detections per image
-            if webcam:  # batch_size >= 1
-                p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
-            else:
-                p, s, im0 = path, '', im0s
+            # Process detections
+            for i, det in enumerate(pred):  # detections per image
+                if webcam:  # batch_size >= 1
+                    p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
+                else:
+                    p, s, im0 = path, '', im0s
 
-            s += '%gx%g ' % img.shape[2:]  # print string
-            save_path = str(Path(out) / Path(p).name)
+                s += '%gx%g ' % img.shape[2:]  # print string
+                save_path = str(Path(out) / Path(p).name)
 
-            if det is not None and len(det):
-                # Rescale boxes from img_size to im0 size
-                det[:, :4] = scale_coords(
-                    img.shape[2:], det[:, :4], im0.shape).round()
+                if det is not None and len(det):
+                    # Rescale boxes from img_size to im0 size
+                    det[:, :4] = scale_coords(
+                        img.shape[2:], det[:, :4], im0.shape).round()
 
-                # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    s += '%g %ss, ' % (n, names[int(c)])  # add to string
-                count_cow.append(n)
-                xywhs = xyxy2xywh(det[:, 0:4])
-                confs = det[:, 4]
-                clss = det[:, 5]
+                    # Print results
+                    for c in det[:, -1].unique():
+                        n = (det[:, -1] == c).sum()  # detections per class
+                        s += '%g %ss, ' % (n, names[int(c)])  # add to string
+                    count_cow.append(n)
+                    xywhs = xyxy2xywh(det[:, 0:4])
+                    confs = det[:, 4]
+                    clss = det[:, 5]
 
-                # pass detections to deepsort
-                outputs = deepsort.update(xywhs.cpu(), confs.cpu(), clss, im0)
+                    # pass detections to deepsort
+                    outputs = deepsort.update(xywhs.cpu(), confs.cpu(), clss, im0)
 
-                # draw boxes for visualization
-                if len(outputs) > 0:
-                    for j, (output, conf) in enumerate(zip(outputs, confs)):
+                    # draw boxes for visualization
+                    if len(outputs) > 0:
+                        for j, (output, conf) in enumerate(zip(outputs, confs)):
 
-                        bboxes = output[0:4]
-                        id = output[4]
-                        cls = output[5]
+                            bboxes = output[0:4]
+                            id = output[4]
+                            cls = output[5]
 
-                        c = int(cls)  # integer class
-                        label = f'{id} {names[c]} {conf:.2f}'
-                        color = compute_color_for_id(id)
-                        plot_one_box(bboxes, im0, label=label, color=color, line_thickness=2)
+                            c = int(cls)  # integer class
+                            label = f'{id} {names[c]} {conf:.2f}'
+                            color = compute_color_for_id(id)
+                            plot_one_box(bboxes, im0, label=label, color=color, line_thickness=2)
 
-                        """add code save center point"""
-                        center_x = output[0] + (output[2] - output[0]) / 2
-                        center_y = output[1] + (output[3] - output[1]) / 2
-                        cv2.line(im0, (int(center_x), int(center_y)), (int(center_x), int(center_y)), color, 5)
-                        object_name = names[c] + "_" + str(id)  # class_name 수정
-                        # frame_x, frame_y = frame_size # 수정
-                        if object_name in activity_volume.keys():
-                            x, y, z = position[object_name]
-                            if center_x > x + 50 or center_x < x - 50 or center_y > y + 50 or center_y < y - 50:
-                                activity_volume[object_name] += (((center_x - x) / ((frame_idx - z) / 30)) ** 2 + (
-                                        (center_y - y) / ((frame_idx - z) / 30)) ** 2) ** 0.5
+                            """add code save center point"""
+                            center_x = output[0] + (output[2] - output[0]) / 2
+                            center_y = output[1] + (output[3] - output[1]) / 2
+                            cv2.line(im0, (int(center_x), int(center_y)), (int(center_x), int(center_y)), color, 5)
+                            object_name = names[c] + "_" + str(id)  # class_name 수정
+                            # frame_x, frame_y = frame_size # 수정
+                            if object_name in activity_volume.keys():
+                                x, y, z = position[object_name]
+                                if center_x > x + 50 or center_x < x - 50 or center_y > y + 50 or center_y < y - 50:
+                                    activity_volume[object_name] += (((center_x - x) / ((frame_idx - z) / 30)) ** 2 + (
+                                            (center_y - y) / ((frame_idx - z) / 30)) ** 2) ** 0.5
+                                    # position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
+                                    position[object_name] = (int(center_x), int(center_y), int(frame_idx))
+                            else:
+                                # exist_id.append(object_name)
                                 # position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
+                                # activity_volume.setdefault(object_name, 0)
                                 position[object_name] = (int(center_x), int(center_y), int(frame_idx))
-                        else:
-                            # exist_id.append(object_name)
-                            # position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
-                            # activity_volume.setdefault(object_name, 0)
-                            position[object_name] = (int(center_x), int(center_y), int(frame_idx))
-                            activity_volume[object_name] = 0
+                                activity_volume[object_name] = 0
+                            """add code end"""
+
+                            if save_txt:
+                                # to MOT format
+                                bbox_left = output[0]
+                                bbox_top = output[1]
+                                bbox_w = output[2] - output[0]
+                                bbox_h = output[3] - output[1]
+                                # Write MOT compliant results to file
+                                with open(txt_path, 'a') as f:
+                                    f.write(('%g ' * 10 + '\n') % (frame_idx, id, bbox_left,
+                                                                   bbox_top, bbox_w, bbox_h, -1, -1, -1,
+                                                                   -1))  # label format
+
+                        """add code"""
+                        if frame_idx % 180 == 0:
+                            tmp = 0
+                            for i in activity_volume.keys():
+                                if i in activity_dic.keys():
+                                    activity_dic[i].append(activity_volume[i])
+                                else:
+                                    try:
+                                        activity_dic[i] = [0 for i in range(len(list(activity_dic.values())[0]) - 1)]
+                                        activity_dic[i].append(activity_volume[i])
+                                    except:
+                                        activity_dic[i] = [activity_volume[i]]
+
+                                tmp += activity_volume[i]
+                                activity_volume[i] = 0
+                            activity_mean[(frame_idx / 30)] = tmp / (int(sum(count_cow)) / len(count_cow))
+                            activity_max[(frame_idx / 30)] = tmp / int(max(count_cow))
+                            # print(activity_mean)
+                            # print(activity_max)
                         """add code end"""
 
-                        if save_txt:
-                            # to MOT format
-                            bbox_left = output[0]
-                            bbox_top = output[1]
-                            bbox_w = output[2] - output[0]
-                            bbox_h = output[3] - output[1]
-                            # Write MOT compliant results to file
-                            with open(txt_path, 'a') as f:
-                                f.write(('%g ' * 10 + '\n') % (frame_idx, id, bbox_left,
-                                                               bbox_top, bbox_w, bbox_h, -1, -1, -1,
-                                                               -1))  # label format
+                else:
+                    deepsort.increment_ages()
 
-                    """add code"""
-                    if frame_idx % 180 == 0:
-                        tmp = 0
-                        for i in activity_volume.keys():
-                            if i in activity_dic.keys():
-                                activity_dic[i].append(activity_volume[i])
-                            else:
-                                try:
-                                    activity_dic[i] = [0 for i in range(len(list(activity_dic.values())[0]) - 1)]
-                                    activity_dic[i].append(activity_volume[i])
-                                except:
-                                    activity_dic[i] = [activity_volume[i]]
+                # Print time (inference + NMS)
+                print('%sDone. (%.3fs)' % (s, t2 - t1))
 
-                            tmp += activity_volume[i]
-                            activity_volume[i] = 0
-                        activity_mean[(frame_idx / 30)] = tmp / (int(sum(count_cow)) / len(count_cow))
-                        activity_max[(frame_idx / 30)] = tmp / int(max(count_cow))
-                        print(activity_mean)
-                        print(activity_max)
-                    """add code end"""
+                # Stream results
+                if show_vid:
+                    cv2.imshow(p, im0)
+                    if cv2.waitKey(1) == ord('q'):  # q to quit
+                        raise StopIteration
 
-            else:
-                deepsort.increment_ages()
+                # Save results (image with detections)
+                if save_vid:
+                    if vid_path != save_path:  # new video
+                        vid_path = save_path
+                        if isinstance(vid_writer, cv2.VideoWriter):
+                            vid_writer.release()  # release previous video writer
+                        if vid_cap:  # video
+                            fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                            w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        else:  # stream
+                            fps, w, h = 30, im0.shape[1], im0.shape[0]
+                            save_path += '.mp4'
 
-            # Print time (inference + NMS)
-            print('%sDone. (%.3fs)' % (s, t2 - t1))
-
-            # Stream results
-            if show_vid:
-                cv2.imshow(p, im0)
-                if cv2.waitKey(1) == ord('q'):  # q to quit
-                    raise StopIteration
-
-            # Save results (image with detections)
-            if save_vid:
-                if vid_path != save_path:  # new video
-                    vid_path = save_path
-                    if isinstance(vid_writer, cv2.VideoWriter):
-                        vid_writer.release()  # release previous video writer
-                    if vid_cap:  # video
-                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    else:  # stream
-                        fps, w, h = 30, im0.shape[1], im0.shape[0]
-                        save_path += '.mp4'
-
-                    vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                vid_writer.write(im0)
+                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                    vid_writer.write(im0)
 
     # add code (save json file)
     with open('/content/activity_volume.json', 'w') as f:
