@@ -93,12 +93,15 @@ def detect(opt):
     # extract what is in between the last '/' and last '.'
     txt_file_name = source.split('/')[-1].split('.')[0]
     txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
-    activity_volume = {}
-    position = {}
-    activity_dic = {}
-    activity_mean = {}
-    activity_max = {}
-    count_cow = []
+    
+    """ by 성호 : 변수 지정 """
+    activity_volume = {} # 키 : object id, 값 : 활동량 <= 매번 프레임마다 계산 및 저장
+    position = {} # 키 : object id,  값 : ((중앙 x, 중앙 y), 프레임)
+    activity_dic = {} # 키 : object id, 값 : 활동량 배열 <= 180 프레임마다 총 합 저장 및 activity_volume 초기화
+    activity_mean = {} # 키 : 초(프레임/30), 값 : 총 활동량을 평균 소의 수로 나눔
+    activity_max = {} # 키 : 초(프레임/30), 값 : 총 활동량을 최대 소의 수로 나눔
+    count_cow = [] # index : 프레임, 값 : 소의 수
+    """ 변수 지정 끝 """
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         # print("B",frame_idx)
         if frame_idx % 10 == 0:
@@ -137,7 +140,7 @@ def detect(opt):
                     for c in det[:, -1].unique():
                         n = (det[:, -1] == c).sum()  # detections per class
                         s += '%g %ss, ' % (n, names[int(c)])  # add to string
-                    count_cow.append(n)
+                    count_cow.append(n) # 소의 마리 수를 저장
                     xywhs = xyxy2xywh(det[:, 0:4])
                     confs = det[:, 4]
                     clss = det[:, 5]
@@ -158,23 +161,20 @@ def detect(opt):
                             color = compute_color_for_id(id)
                             plot_one_box(bboxes, im0, label=label, color=color, line_thickness=2)
 
-                            """add code save center point"""
-                            center_x = output[0] + (output[2] - output[0]) / 2
-                            center_y = output[1] + (output[3] - output[1]) / 2
-                            cv2.line(im0, (int(center_x), int(center_y)), (int(center_x), int(center_y)), color, 5)
+                            """by 성호 : 소의 활동량을 activity_volume에 저장"""
+                            center_x = output[0] + (output[2] - output[0]) / 2 # x의 중앙값
+                            center_y = output[1] + (output[3] - output[1]) / 2 # y의 중앙값
+                            cv2.line(im0, (int(center_x), int(center_y)), (int(center_x), int(center_y)), color, 5) # 가운데 점 표시
                             object_name = names[c] + "_" + str(id)  # class_name 수정
-                            # frame_x, frame_y = frame_size # 수정
-                            if object_name in activity_volume.keys():
-                                x, y, z = position[object_name]
-                                if center_x > x + 50 or center_x < x - 50 or center_y > y + 50 or center_y < y - 50:
+                            if object_name in activity_volume.keys(): # 이전에 activity_volume에 저장된 값이 있으면
+                                x, y, z = position[object_name] # 해당 객체의 중앙값과 프레임 값 불러오기
+                                
+                                # 현재 중앙값이 이전 중앙 값보다 50pixel 밖에 있으면 움직임으로 감지
+                                if center_x > x + 50 or center_x < x - 50 or center_y > y + 50 or center_y < y - 50: 
                                     activity_volume[object_name] += (((center_x - x) / ((frame_idx - z) / 30)) ** 2 + (
                                             (center_y - y) / ((frame_idx - z) / 30)) ** 2) ** 0.5
-                                    # position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
-                                    position[object_name] = (int(center_x), int(center_y), int(frame_idx))
-                            else:
-                                # exist_id.append(object_name)
-                                # position.setdefault(object_name, (int(center_x), int(center_y), int(frame_idx)))
-                                # activity_volume.setdefault(object_name, 0)
+                                    position[object_name] = (int(center_x), int(center_y), int(frame_idx)) # position 값 수정
+                            else: # 새로운 id가 감지됬으면
                                 position[object_name] = (int(center_x), int(center_y), int(frame_idx))
                                 activity_volume[object_name] = 0
                             """add code end"""
@@ -191,25 +191,23 @@ def detect(opt):
                                                                    bbox_top, bbox_w, bbox_h, -1, -1, -1,
                                                                    -1))  # label format
 
-                        """add code"""
+                        """by 성호 : 180frame(약 6초) 동안 활동량 계산"""
                         if frame_idx % 180 == 0:
                             tmp = 0
                             for i in activity_volume.keys():
-                                if i in activity_dic.keys():
-                                    activity_dic[i].append(activity_volume[i])
-                                else:
-                                    try:
-                                        activity_dic[i] = [0 for i in range(len(list(activity_dic.values())[0]) - 1)]
-                                        activity_dic[i].append(activity_volume[i])
-                                    except:
-                                        activity_dic[i] = [activity_volume[i]]
+                                if i in activity_dic.keys(): # activity_dic에 activity_volume의 id 값이 있으면
+                                    activity_dic[i].append(activity_volume[i]) # activity_volume의 값을 activity_dic에 추가
+                                else: # activity_volume에 새로운 id가 추가되면
+                                    try: # 기존의 배열이 있을 때
+                                        activity_dic[i] = [0 for i in range(len(list(activity_dic.values())[0]) - 1)] # 이전 시간의 활동량을 0으로 배열 생성
+                                        activity_dic[i].append(activity_volume[i]) # 현재 활동량을 마지막에 추가
+                                    except: # 기존 배열이 없고 처음일 때
+                                        activity_dic[i] = [activity_volume[i]] # 현재 활동량을 가진 배열을  
 
-                                tmp += activity_volume[i]
-                                activity_volume[i] = 0
-                            activity_mean[(frame_idx / 30)] = tmp / (int(sum(count_cow)) / len(count_cow))
-                            activity_max[(frame_idx / 30)] = tmp / int(max(count_cow))
-                            # print(activity_mean)
-                            # print(activity_max)
+                                tmp += activity_volume[i] # 각 소의 활동량을 더함
+                                activity_volume[i] = 0 # activity_volume의 활동량 값 0으로 초기화
+                            activity_mean[(frame_idx / 30)] = tmp / (int(sum(count_cow)) / len(count_cow)) # 평균 소의 수로 활동량을 나눔
+                            activity_max[(frame_idx / 30)] = tmp / int(max(count_cow)) # 최대 소의 수로 활동량을 나눔
                         """add code end"""
 
                 else:
